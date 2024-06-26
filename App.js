@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Button, PermissionsAndroid, Platform, StyleSheet, Alert } from 'react-native';
+import { View, Text, Button, PermissionsAndroid, Platform, StyleSheet, Alert, TouchableOpacity } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { Buffer } from 'buffer';
 import * as FileSystem from 'expo-file-system';
@@ -61,6 +61,7 @@ const App = () => {
   const [isScanning, setIsScanning] = useState(false);
   const [timestamp, setTimestamp] = useState("");
   const [location, setLocation] = useState(null);
+  const [alertMessage, setAlertMessage] = useState(null);
 
   useEffect(() => {
     requestPermissions().catch(error => console.error('Error requesting permissions:', error));
@@ -71,26 +72,39 @@ const App = () => {
     };
   }, []);
 
+  const showTemporaryAlert = (message) => {
+    setAlertMessage(message);
+    setTimeout(() => setAlertMessage(null), 2000);
+  };
+
   const scanAndConnect = () => {
     console.log('Starting scan...');
+    showTemporaryAlert('Starting scan...');
     setIsScanning(true);
     BLEManager.startDeviceScan(null, null, (error, device) => {
       if (error) {
         console.error('Error during scan:', error);
+        showTemporaryAlert(`Error during scan: ${error.message}`);
         setIsScanning(false);
         return;
       }
 
       if (device.name) {
         console.log(`Found device: ${device.name}`);
+        showTemporaryAlert(`Found device: ${device.name}`);
       } else {
         console.log('Found device with no name');
+        showTemporaryAlert('Found device with no name');
       }
 
       if (device.name === DEVICE_NAME) {
         console.log('Found target device, stopping scan...');
+        showTemporaryAlert('Found target device, stopping scan...');
         BLEManager.stopDeviceScan();
-        connectToDevice(device).catch(error => console.error('Error connecting to device:', error));
+        connectToDevice(device).catch(error => {
+          console.error('Error connecting to device:', error);
+          showTemporaryAlert(`Error connecting to device: ${error.message}`);
+        });
       }
     });
   };
@@ -98,19 +112,23 @@ const App = () => {
   const connectToDevice = async (device) => {
     try {
       console.log('Connecting to device...');
+      showTemporaryAlert('Connecting to device...');
       const connectedDevice = await device.connect();
       setConnectedDevice(connectedDevice);
 
       console.log('Discovering services and characteristics...');
+      showTemporaryAlert('Discovering services and characteristics...');
       await connectedDevice.discoverAllServicesAndCharacteristics();
     } catch (error) {
       console.error('Error connecting to device:', error);
+      showTemporaryAlert(`Error connecting to device: ${error.message}`);
     }
   };
 
   const readDataFromDevice = async (device) => {
     try {
       console.log('Reading data from device...');
+      showTemporaryAlert('Reading data from device...');
       const temperatureCharacteristic = await device.readCharacteristicForService(SERVICE_UUID, TEMPERATURE_CHARACTERISTIC_UUID);
       const humidityCharacteristic = await device.readCharacteristicForService(SERVICE_UUID, HUMIDITY_CHARACTERISTIC_UUID);
 
@@ -146,13 +164,16 @@ const App = () => {
                 })
                   .then(() => {
                     console.log("Data appended!");
+                    showTemporaryAlert("Data appended!");
                   })
                   .catch((err) => {
                     console.log(err.message);
+                    showTemporaryAlert(err.message);
                   });
               })
               .catch((err) => {
                 console.log(err.message);
+                showTemporaryAlert(err.message);
               });
           } else {
             FileSystem.writeAsStringAsync(path, csvData, {
@@ -160,23 +181,30 @@ const App = () => {
             })
               .then(() => {
                 console.log("File created and data written!");
+                showTemporaryAlert("File created and data written!");
               })
               .catch((err) => {
                 console.log(err.message);
+                showTemporaryAlert(err.message);
               });
           }
         })
         .catch((err) => {
           console.log(err.message);
+          showTemporaryAlert(err.message);
         });
     } catch (error) {
       console.error('Error reading data from device:', error);
+      showTemporaryAlert(`Error reading data from device: ${error.message}`);
     }
   };
 
   const takeData = async () => {
     if (connectedDevice) {
-      readDataFromDevice(connectedDevice).catch(error => console.error('Error reading data from device:', error));
+      readDataFromDevice(connectedDevice).catch(error => {
+        console.error('Error reading data from device:', error);
+        showTemporaryAlert(`Error reading data from device: ${error.message}`);
+      });
     } else {
       Alert.alert('Device not connected', 'Please scan and connect to a device first.');
     }
@@ -193,11 +221,33 @@ const App = () => {
       encoding: FileSystem.EncodingType.UTF8,
     });
     console.log("File cleared!");
+    showTemporaryAlert("File cleared!");
+  };
+
+  const confirmClearFile = () => {
+    Alert.alert(
+      "Confirm Delete",
+      "Are you sure you want to clear the data file?",
+      [
+        {
+          text: "Cancel",
+          onPress: () => console.log("Clear file cancelled"),
+          style: "cancel"
+        },
+        { text: "OK", onPress: clearFile }
+      ],
+      { cancelable: false }
+    );
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>BLE Temperature and Humidity Monitor</Text>
+      {alertMessage && (
+        <View style={styles.alertBox}>
+          <Text style={styles.alertText}>{alertMessage}</Text>
+        </View>
+      )}
       {connectedDevice ? (
         <View>
           <Text style={styles.text}>Temperature: {temperature !== null ? `${temperature} °C` : 'N/A'}</Text>
@@ -208,9 +258,15 @@ const App = () => {
               Location: {`${location.coords.latitude}, ${location.coords.longitude}`}
             </Text>
           )}
-          <Button title="Take Data" onPress={takeData} />
-          <Button title="Share File" onPress={shareFile} />
-          <Button title="Clear File" onPress={clearFile} />
+          <TouchableOpacity style={styles.databutton} onPress={takeData}>
+            <Text style={styles.databuttonText}>Take Data</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.otherbuttons} onPress={shareFile}>
+            <Text style={styles.otherbuttonsText}>Share File</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.otherbuttons} onPress={confirmClearFile}>
+            <Text style={styles.otherbuttonsText}>Clear Data File</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <Button title={isScanning ? "Scanning..." : "Scan for Devices"} onPress={scanAndConnect} disabled={isScanning} />
@@ -225,6 +281,39 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  alertBox: {
+    padding: 10,
+    backgroundColor: 'yellow',
+    marginBottom: 10,
+    borderRadius: 5,
+  },
+  alertText: {
+    fontSize: 16,
+    color: 'black',
+  },
+  databutton: {
+    marginBottom: 20,
+	 marginTop: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: 'blue', // Example background color
+    borderRadius: 5,
+  },
+  databuttonText: {
+    fontSize: 30,
+    color: 'yellow',
+  },
+  otherbuttons: {
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: 'green', // Example background color
+    borderRadius: 5,
+  },
+  otherbuttonsText: {
+    fontSize: 20,
+    color: 'white',
   },
   title: {
     fontSize: 20,
