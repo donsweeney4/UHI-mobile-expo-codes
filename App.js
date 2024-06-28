@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Button, PermissionsAndroid, Platform, StyleSheet, Alert, TouchableOpacity } from 'react-native';
+import { View, Text, Button, PermissionsAndroid, Platform, StyleSheet, Alert, TouchableOpacity, BackHandler } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import { Buffer } from 'buffer';
 import * as FileSystem from 'expo-file-system';
-import * as Sharing from 'expo-sharing';
 import * as Location from 'expo-location';
+import * as DocumentPicker from 'expo-document-picker';
 
 const BLEManager = new BleManager();
 
@@ -148,8 +148,11 @@ const App = () => {
       let location = await Location.getCurrentPositionAsync({});
       setLocation(location);
 
+      // Get the current Unix timestamp
+      const currentUnixTimestamp = Math.floor(Date.now() / 1000);
+      const fileName = `data_${currentUnixTimestamp}.csv`;
       let csvData = `"${timestamp}","${location.coords.latitude}","${location.coords.longitude}","${temperature}","${humidity}"\n`;
-      let path = FileSystem.documentDirectory + "data.csv";
+      let path = FileSystem.documentDirectory + fileName;
 
       FileSystem.getInfoAsync(path)
         .then(({ exists }) => {
@@ -210,13 +213,43 @@ const App = () => {
     }
   };
 
-  const shareFile = async () => {
-    let path = FileSystem.documentDirectory + "data.csv";
-    await Sharing.shareAsync(path);
+  const uploadAndEmailFile = async () => {
+    const currentUnixTimestamp = Math.floor(Date.now() / 1000);
+    const fileName = `data_${currentUnixTimestamp}.csv`;
+    let path = FileSystem.documentDirectory + fileName;
+
+    let formData = new FormData();
+    formData.append('file', {
+      uri: path,
+      name: fileName,
+      type: 'text/csv',
+    });
+
+    try {
+      let response = await fetch('http://your-backend-url/send-email', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      let result = await response.json();
+      if (response.status === 200) {
+        showTemporaryAlert("Email sent successfully");
+      } else {
+        showTemporaryAlert(`Email failed to send: ${result.message}`);
+      }
+    } catch (error) {
+      console.error('Error uploading and sending email:', error);
+      showTemporaryAlert(`Error: ${error.message}`);
+    }
   };
 
   const clearFile = async () => {
-    let path = FileSystem.documentDirectory + "data.csv";
+    const currentUnixTimestamp = Math.floor(Date.now() / 1000);
+    const fileName = `data_${currentUnixTimestamp}.csv`;
+    let path = FileSystem.documentDirectory + fileName;
     await FileSystem.writeAsStringAsync(path, "", {
       encoding: FileSystem.EncodingType.UTF8,
     });
@@ -235,6 +268,22 @@ const App = () => {
           style: "cancel"
         },
         { text: "OK", onPress: clearFile }
+      ],
+      { cancelable: false }
+    );
+  };
+
+  const quitApp = () => {
+    Alert.alert(
+      "Exit App",
+      "Are you sure you want to exit the app?",
+      [
+        {
+          text: "Cancel",
+          onPress: () => console.log("Exit cancelled"),
+          style: "cancel"
+        },
+        { text: "OK", onPress: () => BackHandler.exitApp() }
       ],
       { cancelable: false }
     );
@@ -261,11 +310,14 @@ const App = () => {
           <TouchableOpacity style={styles.databutton} onPress={takeData}>
             <Text style={styles.databuttonText}>Take Data</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.otherbuttons} onPress={shareFile}>
-            <Text style={styles.otherbuttonsText}>Share File</Text>
+          <TouchableOpacity style={styles.otherbuttons} onPress={uploadAndEmailFile}>
+            <Text style={styles.otherbuttonsText}>Email Data File</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.otherbuttons} onPress={confirmClearFile}>
             <Text style={styles.otherbuttonsText}>Clear Data File</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quitButton} onPress={quitApp}>
+            <Text style={styles.quitButtonText}>Quit</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -294,10 +346,10 @@ const styles = StyleSheet.create({
   },
   databutton: {
     marginBottom: 20,
-	 marginTop: 20,
+    marginTop: 20,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    backgroundColor: 'blue', // Example background color
+    backgroundColor: 'blue',
     borderRadius: 5,
   },
   databuttonText: {
@@ -308,10 +360,21 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     paddingVertical: 10,
     paddingHorizontal: 20,
-    backgroundColor: 'green', // Example background color
+    backgroundColor: 'green',
     borderRadius: 5,
   },
   otherbuttonsText: {
+    fontSize: 20,
+    color: 'white',
+  },
+  quitButton: {
+    marginTop: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: 'red',
+    borderRadius: 5,
+  },
+  quitButtonText: {
     fontSize: 20,
     color: 'white',
   },

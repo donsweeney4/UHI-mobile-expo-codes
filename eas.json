@@ -1,0 +1,20 @@
+{
+  "build": {
+    "release": {
+      "android": {
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:assembleRelease",
+        "distribution": "store",
+        "releaseChannel": "default"
+      }
+    },
+    "preview": {
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleDebug",
+        "distribution": "internal",
+        "releaseChannel": "preview"
+      }
+    }
+  }
+}
